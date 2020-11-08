@@ -11,7 +11,6 @@
 # 垃圾识别分类数据集中包括玻璃 (glass) 、硬纸板 (cardboard) 、金属 (metal) 、纸 (paper) 、塑料 (plastic) 、一般垃圾 (trash) ，共6个类别。    
 # 生活垃圾由于种类繁多，具体分类缺乏统一标准，大多人在实际操作时会“选择困难”，基于深度学习技术建立准确的分类模型，利用技术手段改善人居环境。    
 
-
 # ## 1.2 题目要求
 # 1) 任务提供包括数据读取、基础模型、模型训练等基本代码  
 # 2) 参赛选手需完成核心模型构建代码，并尽可能将模型调到最佳状态  
@@ -55,7 +54,7 @@
 import glob, os
 
 # 数据集路径
-data_path = "./datasets/la1ji1fe1nle4ishu4ju4ji22-momodel/dataset-resized"
+data_path = "../datasets/la1ji1fe1nle4ishu4ju4ji22-momodel/dataset-resized"
 
 # 获取数据名称列表
 img_list = glob.glob(os.path.join(data_path, '*/*.jpg'))
@@ -504,6 +503,7 @@ load_and_model_prediction(validation_generator)
 from tensorflow.keras.models import load_model
 
 
+
 def plot_load_and_model_prediction(validation_generator, labels):
     """
     加载模型、模型预测并展示模型预测结果等
@@ -617,9 +617,19 @@ print(load_and_predict(img))
 # 
 # 双击下方区域开始编写  **数据处理**、**创建模型**、**训练模型**、**保存模型**  和  **评估模型**  等部分的代码，请勿在别的位置作答
 
-# In[29]:
+# In[5]:
 
 
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
+
+import glob
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import Sequential, layers, models
+
+# 数据预处理
 def processing_data(data_path):
     """
     数据处理
@@ -627,11 +637,64 @@ def processing_data(data_path):
     :return: train, test:处理后的训练集数据、测试集数据
     """
     # -------------------------- 实现数据处理部分代码 ----------------------------
+    # 图片的长宽
+    height, width = 384, 512
+    # 训练数据：测试数据 = 8：2
+    validation_split = 0.2
+    # 批量处理数据大小
+    batch_size = 16
+
+    img_list = glob.glob(os.path.join(data_path, '*/*.jpg'))
+    print("数据集数量：", len(img_list))
+    train_datagen = ImageDataGenerator(
+        # 对图片的每个像素值均乘上这个放缩因子，把像素值放缩到0和1之间有利于模型的收敛
+        rescale=1. / 255,
+        # 浮点数，剪切强度（逆时针方向的剪切变换角度）
+        shear_range=0.1,
+        # 随机缩放的幅度，若为浮点数，则相当于[lower,upper] = [1 - zoom_range, 1+zoom_range]
+        zoom_range=0.1,
+        # 浮点数，图片宽度的某个比例，数据提升时图片水平偏移的幅度
+        width_shift_range=0.1,
+        # 浮点数，图片高度的某个比例，数据提升时图片竖直偏移的幅度
+        height_shift_range=0.1,
+        # 布尔值，进行随机水平翻转
+        horizontal_flip=True,
+        # 布尔值，进行随机竖直翻转
+        vertical_flip=True,
+        # 在 0 和 1 之间浮动。用作验证集的训练数据的比例
+        validation_split=validation_split
+    )
+    test_datagen = ImageDataGenerator(
+        rescale=1. / 255,
+        validation_split=validation_split
+    )
+
+    train_generator = train_datagen.flow_from_directory(
+        # 提供的路径下面需要有子目录
+        data_path,
+        # 整数元组 (height, width)，默认：(256, 256)。 所有的图像将被调整到的尺寸。
+        target_size=(height, width),
+        # 一批数据的大小
+        batch_size=batch_size,
+        # "categorical", "binary", "sparse", "input" 或 None 之一。
+        # 默认："categorical",返回one-hot 编码标签。
+        class_mode='categorical',
+        # 数据子集 ("training" 或 "validation")
+        subset='training',
+        seed=0
+    )
+
+    validation_generator = test_datagen.flow_from_directory(
+        data_path,
+        target_size=(height, width),
+        batch_size=batch_size,
+        class_mode='categorical',
+        subset='validation',
+        seed=0)
 
     # ------------------------------------------------------------------------
-    train_data, test_data = None, None
+    train_data, test_data = train_generator, validation_generator
     return train_data, test_data
-
 
 def model(train_data, test_data, save_model_path):
     """
@@ -643,9 +706,49 @@ def model(train_data, test_data, save_model_path):
     """
     # --------------------- 实现模型创建、训练和保存等部分的代码 ---------------------
 
+    model = Sequential([
+        layers.Conv2D(filters=32, kernel_size=3, padding='same', activation='relu', input_shape=(384, 512, 3)),
+        layers.MaxPooling2D(pool_size=2),
+
+        layers.Conv2D(filters=64, kernel_size=3, padding='same', activation='relu'),
+        layers.MaxPooling2D(pool_size=2),
+
+        layers.Conv2D(filters=32, kernel_size=3, padding='same', activation='relu'),
+        layers.MaxPooling2D(pool_size=2),
+
+        layers.Conv2D(filters=32, kernel_size=3, padding='same', activation='relu'),
+        layers.MaxPooling2D(pool_size=2),
+
+        layers.Flatten(),
+
+        layers.Dense(64, activation='relu'),
+
+        layers.Dense(6, activation='softmax')
+    ])
+
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['acc'])
+
+    model.summary()
+    #     使用VGG19迁移学习
+    #     net = keras.applications.VGG19(
+    #         weihts='vgg19_weights_tf_dim_ordering_tf_kernels_notop.h5',
+    #         include_top = False,
+    #         pooling='max'
+    #     )
+    #     net.trainable = False
+    #     new_net = keras.Sequential([
+    #         net,
+    #         layers.Dense(6)
+    #     ])
+    #     new_net.build(input_shape=())
+
     # 保存模型（请写好保存模型的路径及名称）
     # -------------------------------------------------------------------------
 
+    model.fit_generator(train_data,epochs=20,validation_data=test_data)
+
+    # 保存模型
+    model.save(save_model_path)
     return model
 
 
@@ -663,6 +766,8 @@ def evaluate_mode(test_data, save_model_path):
     """
     # ----------------------- 实现模型加载和评估等部分的代码 -----------------------
 
+    model = models.load_model(save_model_path)
+
     # ---------------------------------------------------------------------------
 
 
@@ -673,7 +778,7 @@ def main():
     如果你对自己训练出来的模型非常满意,则可以提交了!
     :return:
     """
-    data_path = None  # 数据集路径
+    data_path = "./datasets/la1ji1fe1nle4ishu4ju4ji22-momodel/dataset-resized/"  # 数据集路径
     save_model_path = None  # 保存模型路径和名称
 
     # 获取数据
@@ -716,10 +821,10 @@ import os
 # 加载模型(请加载你认为的最佳模型)
 # 加载模型,加载请注意 model_path 是相对路径, 与当前文件同级。
 # 如果你的模型是在 results 文件夹下的 dnn.h5 模型，则 model_path = 'results/dnn.h5'
-model_path = None
+model_path = 'results/'
 
 # 加载模型，如果采用keras框架训练模型，则 model=load_model(model_path)
-model = None
+model = load_model(model_path)
     
 # ---------------------------------------------------------------------------
 
@@ -738,12 +843,17 @@ def predict(img):
     # 把图片转换成为numpy数组
     img = image.img_to_array(img)
     
+    img = 1.0/255 * img
+#     把img.shape转换成(1, img.shape[0], img.shape[1], img.shape[2])
+    x = np.expand_dims(img, axis=0)
 
     # 获取输入图片的类别
-    y_predict = None
+    y_predict = model.predict(x)
 
-    # -------------------------------------------------------------------------
+    labels = {0: 'cardboard', 1: 'glass', 2: 'metal', 3: 'paper', 4: 'plastic', 5: 'trash'}
     
+    # -------------------------------------------------------------------------
+    y_predict = labels[np.argmax(y)]
     # 返回图片的类别
     return y_predict
 
