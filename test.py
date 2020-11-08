@@ -167,7 +167,7 @@ def main():
     :return:
     """
     data_path = "./datasets/la1ji1fe1nle4ishu4ju4ji22-momodel/dataset-resized/"  # 数据集路径
-    save_model_path = None  # 保存模型路径和名称
+    save_model_path = "./results/model1.h5"  # 保存模型路径和名称
 
     # 获取数据
     train_data, test_data = processing_data(data_path)
